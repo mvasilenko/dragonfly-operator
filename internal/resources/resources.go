@@ -511,6 +511,14 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 		statefulset.Spec.Template.Spec.Volumes, df.Spec.AdditionalVolumes,
 		func(v corev1.Volume) string { return v.Name })
 
+	// ConfigMaps are appended before the StatefulSet so they exist when pods start
+	// and can mount the probe script volumes without getting stuck in Pending.
+	resources = append(resources,
+		generateProbeConfigMap(df, LivenessProbeConfigMapSuffix, LivenessScriptKey, defaultLivenessScript),
+		generateProbeConfigMap(df, ReadinessProbeConfigMapSuffix, ReadinessScriptKey, defaultReadinessScript),
+		generateProbeConfigMap(df, StartupProbeConfigMapSuffix, StartupScriptKey, defaultStartupScript),
+	)
+
 	resources = append(resources, &statefulset)
 
 	serviceName := df.Name
@@ -611,12 +619,6 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 		np := generateNetworkPolicy(df)
 		resources = append(resources, &np)
 	}
-
-	resources = append(resources,
-		generateProbeConfigMap(df, LivenessProbeConfigMapSuffix, LivenessScriptKey, defaultLivenessScript),
-		generateProbeConfigMap(df, ReadinessProbeConfigMapSuffix, ReadinessScriptKey, defaultReadinessScript),
-		generateProbeConfigMap(df, StartupProbeConfigMapSuffix, StartupScriptKey, defaultStartupScript),
-	)
 
 	return resources, nil
 }
