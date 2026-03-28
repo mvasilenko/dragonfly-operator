@@ -136,10 +136,8 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			err := k8sClient.Create(ctx, &df)
 			Expect(err).To(BeNil())
 
-			// Wait until Dragonfly object is marked initialized
-			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseResourcesCreated, 2*time.Minute)
-			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
-
+			// Wait for master election — PhaseReady guarantees all pods are Ready and master is labeled
+			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 3*time.Minute)
 		})
 
 		var ss appsv1.StatefulSet

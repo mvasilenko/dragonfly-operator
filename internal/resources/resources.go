@@ -174,7 +174,7 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 								},
 								FailureThreshold:    60,
 								InitialDelaySeconds: 0,
-								PeriodSeconds:       10,
+								PeriodSeconds:       5,
 								SuccessThreshold:    1,
 								TimeoutSeconds:      5,
 							},
