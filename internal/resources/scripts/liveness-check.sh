@@ -1,0 +1,2 @@
+#!/bin/sh
+nc -w1 127.0.0.1 "${HEALTHCHECK_PORT}" </dev/null
