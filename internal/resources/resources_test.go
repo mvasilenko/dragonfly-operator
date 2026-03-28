@@ -292,17 +292,17 @@ func TestProbeConfigMaps_Generated(t *testing.T) {
 	liveness := findConfigMap(objs, "test-df-liveness-probe")
 	require.NotNil(t, liveness, "liveness-probe ConfigMap should be generated")
 	assert.Contains(t, liveness.Data, "liveness-check.sh")
-	assert.Contains(t, liveness.Data["liveness-check.sh"], "nc -w1")
+	assert.Contains(t, liveness.Data["liveness-check.sh"], "redis-cli")
 
 	readiness := findConfigMap(objs, "test-df-readiness-probe")
 	require.NotNil(t, readiness, "readiness-probe ConfigMap should be generated")
 	assert.Contains(t, readiness.Data, "readiness-check.sh")
-	assert.Contains(t, readiness.Data["readiness-check.sh"], "+PONG")
+	assert.Contains(t, readiness.Data["readiness-check.sh"], "redis-cli")
 
 	startup := findConfigMap(objs, "test-df-startup-probe")
 	require.NotNil(t, startup, "startup-probe ConfigMap should be generated")
 	assert.Contains(t, startup.Data, "startup-check.sh")
-	assert.Contains(t, startup.Data["startup-check.sh"], "+PONG")
+	assert.Contains(t, startup.Data["startup-check.sh"], "redis-cli")
 }
 
 func TestHealthcheckPortEnvVar_DefaultsToRedisPort(t *testing.T) {
