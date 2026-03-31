@@ -245,22 +245,22 @@ func TestGenerateDragonflyResources_NetworkPolicyWithMemcached(t *testing.T) {
 	assert.Equal(t, intstr.FromInt32(11211), *memcachedRule.Ports[0].Port)
 }
 
-func TestresolveDragonflyPort_Default(t *testing.T) {
+func TestResolveDragonflyPort_Default(t *testing.T) {
 	assert.Equal(t, int32(DragonflyPort), resolveDragonflyPort(nil))
 	assert.Equal(t, int32(DragonflyPort), resolveDragonflyPort([]string{}))
 	assert.Equal(t, int32(DragonflyPort), resolveDragonflyPort([]string{"--alsologtostderr"}))
 }
 
-func TestresolveDragonflyPort_CustomPort(t *testing.T) {
+func TestResolveDragonflyPort_CustomPort(t *testing.T) {
 	assert.Equal(t, int32(6380), resolveDragonflyPort([]string{"--port=6380"}))
 }
 
-func TestresolveDragonflyPort_InvalidPort(t *testing.T) {
+func TestResolveDragonflyPort_InvalidPort(t *testing.T) {
 	// invalid value falls back to default
 	assert.Equal(t, int32(DragonflyPort), resolveDragonflyPort([]string{"--port=notanumber"}))
 }
 
-func TestresolveDragonflyPort_OutOfRange(t *testing.T) {
+func TestResolveDragonflyPort_OutOfRange(t *testing.T) {
 	assert.Equal(t, int32(DragonflyPort), resolveDragonflyPort([]string{"--port=0"}))
 	assert.Equal(t, int32(DragonflyPort), resolveDragonflyPort([]string{"--port=65536"}))
 	assert.Equal(t, int32(DragonflyPort), resolveDragonflyPort([]string{"--port=-1"}))

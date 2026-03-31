@@ -442,15 +442,15 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 
 	// Probe script volumes — the corresponding ConfigMaps are generated and appended to resources below.
 	livenessConfigMapName := fmt.Sprintf("%s-%s", df.Name, LivenessProbeConfigMapSuffix)
-	if df.Spec.CustomLivenessProbeConfigMap != nil {
+	if df.Spec.CustomLivenessProbeConfigMap != nil && df.Spec.CustomLivenessProbeConfigMap.Name != "" {
 		livenessConfigMapName = df.Spec.CustomLivenessProbeConfigMap.Name
 	}
 	readinessConfigMapName := fmt.Sprintf("%s-%s", df.Name, ReadinessProbeConfigMapSuffix)
-	if df.Spec.CustomReadinessProbeConfigMap != nil {
+	if df.Spec.CustomReadinessProbeConfigMap != nil && df.Spec.CustomReadinessProbeConfigMap.Name != "" {
 		readinessConfigMapName = df.Spec.CustomReadinessProbeConfigMap.Name
 	}
 	startupConfigMapName := fmt.Sprintf("%s-%s", df.Name, StartupProbeConfigMapSuffix)
-	if df.Spec.CustomStartupProbeConfigMap != nil {
+	if df.Spec.CustomStartupProbeConfigMap != nil && df.Spec.CustomStartupProbeConfigMap.Name != "" {
 		startupConfigMapName = df.Spec.CustomStartupProbeConfigMap.Name
 	}
 
