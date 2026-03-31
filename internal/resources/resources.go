@@ -142,7 +142,15 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 								Name:  "HEALTHCHECK_PORT",
 								Value: fmt.Sprintf("%d", resolveDragonflyPort(df.Spec.Args)),
 							}),
-							ReadinessProbe: &corev1.Probe{
+							// Probe semantics during dataset LOADING (large snapshot restore):
+						//   StartupProbe  — succeeds on any PING response (PONG or LOADING); prevents
+						//                   liveness from firing before the process is up.
+						//   LivenessProbe — succeeds on any PING response (PONG or LOADING); must NOT
+						//                   restart a pod that is mid-restore, as that aborts the load
+						//                   and creates a crash loop (see issues #426, #508).
+						//   ReadinessProbe — fails on LOADING; gates traffic until the dataset is fully
+						//                   loaded and Dragonfly can serve requests.
+						ReadinessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
 									Exec: &corev1.ExecAction{
 										Command: []string{"/bin/sh", ProbeMountPath + "/" + ReadinessScriptKey},

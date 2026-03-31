@@ -7,7 +7,9 @@ PORT=${HEALTHCHECK_PORT:-6379}
 RESPONSE=$(redis-cli -h "$HOST" -p "$PORT" --no-auth-warning \
   ${DFLY_requirepass:+-a "$DFLY_requirepass"} PING 2>/dev/null)
 
-# Fail if Dragonfly is still loading the dataset
+# Fail if Dragonfly is still loading the dataset — pod should not receive traffic
+# until the restore is complete. Startup and liveness probes intentionally succeed
+# during LOADING so the pod is not restarted mid-restore.
 case "$RESPONSE" in
   *LOADING*) exit 1 ;;
   PONG)      exit 0 ;;
