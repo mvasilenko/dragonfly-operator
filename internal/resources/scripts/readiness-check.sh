@@ -13,7 +13,7 @@
 # is not restarted mid-restore. This probe is the sole gate on traffic.
 
 HOST="localhost"
-PORT=${HEALTHCHECK_PORT:-9999}
+PORT=9999  # Dragonfly admin port — always plain-text, not user-configurable
 
 RESPONSE=$(redis-cli -h "$HOST" -p "$PORT" --no-auth-warning INFO persistence 2>/dev/null)
 
