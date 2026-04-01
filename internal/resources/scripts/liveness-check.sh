@@ -11,7 +11,7 @@
 # which only succeeds once the dataset is fully loaded.
 
 HOST="localhost"
-PORT=${HEALTHCHECK_PORT:-6379}
+PORT=${HEALTHCHECK_PORT:-9999}
 
 # Use DFLY_requirepass if set (injected from spec.authentication.passwordFromSecret)
 RESPONSE=$(redis-cli -h "$HOST" -p "$PORT" --no-auth-warning \
