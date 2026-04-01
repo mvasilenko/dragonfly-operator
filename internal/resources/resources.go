@@ -139,8 +139,11 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 							},
 							Args: DefaultDragonflyArgs,
 							Env: append(df.Spec.Env, corev1.EnvVar{
+								// Probe scripts use the admin port, always plain-text even with TLS
+								// (--no_tls_on_admin_port is always set). Using the main client port
+								// would break probes on TLS-enabled clusters.
 								Name:  "HEALTHCHECK_PORT",
-								Value: fmt.Sprintf("%d", resolveDragonflyPort(df.Spec.Args)),
+								Value: fmt.Sprintf("%d", DragonflyAdminPort),
 							}),
 							// Probe semantics during dataset LOADING (large snapshot restore):
 						//   StartupProbe  — succeeds on any PING response (PONG or LOADING); prevents

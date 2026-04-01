@@ -305,7 +305,7 @@ func TestProbeConfigMaps_Generated(t *testing.T) {
 	assert.Contains(t, startup.Data["startup-check.sh"], "redis-cli")
 }
 
-func TestHealthcheckPortEnvVar_DefaultsToRedisPort(t *testing.T) {
+func TestHealthcheckPortEnvVar_DefaultsToAdminPort(t *testing.T) {
 	df := newTestDragonfly(1)
 	objs, err := GenerateDragonflyResources(df, "")
 	require.NoError(t, err)
@@ -322,10 +322,14 @@ func TestHealthcheckPortEnvVar_DefaultsToRedisPort(t *testing.T) {
 		}
 	}
 	require.NotNil(t, hcPort, "HEALTHCHECK_PORT env var must be set")
-	assert.Equal(t, fmt.Sprintf("%d", DragonflyPort), hcPort.Value)
+	// Probe scripts always target the admin port — it is plain-text even when TLS
+	// is enabled on the main client port (--no_tls_on_admin_port is always set).
+	assert.Equal(t, fmt.Sprintf("%d", DragonflyAdminPort), hcPort.Value)
 }
 
-func TestHealthcheckPortEnvVar_CustomPortFromArgs(t *testing.T) {
+func TestHealthcheckPortEnvVar_UnaffectedByCustomClientPort(t *testing.T) {
+	// Custom --port= changes the client-facing port but probes must still use the
+	// admin port regardless, because the admin port is always plain-text.
 	df := newTestDragonfly(1)
 	df.Spec.Args = []string{"--port=6380"}
 	objs, err := GenerateDragonflyResources(df, "")
@@ -343,7 +347,7 @@ func TestHealthcheckPortEnvVar_CustomPortFromArgs(t *testing.T) {
 		}
 	}
 	require.NotNil(t, hcPort)
-	assert.Equal(t, "6380", hcPort.Value)
+	assert.Equal(t, fmt.Sprintf("%d", DragonflyAdminPort), hcPort.Value)
 }
 
 func TestProbeVolumesAndMounts_Default(t *testing.T) {
