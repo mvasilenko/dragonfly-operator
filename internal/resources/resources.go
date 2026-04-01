@@ -18,8 +18,6 @@ package resources
 
 import (
 	"fmt"
-	"strconv"
-	"strings"
 
 	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -35,17 +33,6 @@ var (
 	dflyUserGroup int64 = 999
 )
 
-// resolveDragonflyPort returns the Dragonfly port from spec.args --port=XXXX, defaulting to DragonflyPort.
-func resolveDragonflyPort(args []string) int32 {
-	for _, arg := range args {
-		if strings.HasPrefix(arg, "--port=") {
-			if p, err := strconv.Atoi(strings.TrimPrefix(arg, "--port=")); err == nil && p > 0 && p <= 65535 {
-				return int32(p)
-			}
-		}
-	}
-	return DragonflyPort
-}
 
 func generateProbeConfigMap(df *resourcesv1.Dragonfly, suffix, key, script string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
@@ -138,13 +125,7 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 								},
 							},
 							Args: DefaultDragonflyArgs,
-							Env: append(df.Spec.Env, corev1.EnvVar{
-								// Probe scripts use the admin port, always plain-text even with TLS
-								// (--no_tls_on_admin_port is always set). Using the main client port
-								// would break probes on TLS-enabled clusters.
-								Name:  "HEALTHCHECK_PORT",
-								Value: fmt.Sprintf("%d", DragonflyAdminPort),
-							}),
+							Env: df.Spec.Env,
 							// Probe semantics during dataset LOADING (large snapshot restore):
 						//   StartupProbe  — succeeds on any PING response (PONG or LOADING); prevents
 						//                   liveness from firing before the process is up.

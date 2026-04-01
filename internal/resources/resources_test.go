@@ -1,7 +1,6 @@
 package resources
 
 import (
-	"fmt"
 	"testing"
 
 	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
@@ -245,26 +244,6 @@ func TestGenerateDragonflyResources_NetworkPolicyWithMemcached(t *testing.T) {
 	assert.Equal(t, intstr.FromInt32(11211), *memcachedRule.Ports[0].Port)
 }
 
-func TestResolveDragonflyPort_Default(t *testing.T) {
-	assert.Equal(t, int32(DragonflyPort), resolveDragonflyPort(nil))
-	assert.Equal(t, int32(DragonflyPort), resolveDragonflyPort([]string{}))
-	assert.Equal(t, int32(DragonflyPort), resolveDragonflyPort([]string{"--alsologtostderr"}))
-}
-
-func TestResolveDragonflyPort_CustomPort(t *testing.T) {
-	assert.Equal(t, int32(6380), resolveDragonflyPort([]string{"--port=6380"}))
-}
-
-func TestResolveDragonflyPort_InvalidPort(t *testing.T) {
-	// invalid value falls back to default
-	assert.Equal(t, int32(DragonflyPort), resolveDragonflyPort([]string{"--port=notanumber"}))
-}
-
-func TestResolveDragonflyPort_OutOfRange(t *testing.T) {
-	assert.Equal(t, int32(DragonflyPort), resolveDragonflyPort([]string{"--port=0"}))
-	assert.Equal(t, int32(DragonflyPort), resolveDragonflyPort([]string{"--port=65536"}))
-	assert.Equal(t, int32(DragonflyPort), resolveDragonflyPort([]string{"--port=-1"}))
-}
 
 func findStatefulSet(objs []client.Object) *appsv1.StatefulSet {
 	for _, obj := range objs {
@@ -305,50 +284,6 @@ func TestProbeConfigMaps_Generated(t *testing.T) {
 	assert.Contains(t, startup.Data["startup-check.sh"], "redis-cli")
 }
 
-func TestHealthcheckPortEnvVar_DefaultsToAdminPort(t *testing.T) {
-	df := newTestDragonfly(1)
-	objs, err := GenerateDragonflyResources(df, "")
-	require.NoError(t, err)
-
-	sts := findStatefulSet(objs)
-	require.NotNil(t, sts)
-
-	var hcPort *corev1.EnvVar
-	for i := range sts.Spec.Template.Spec.Containers[0].Env {
-		env := &sts.Spec.Template.Spec.Containers[0].Env[i]
-		if env.Name == "HEALTHCHECK_PORT" {
-			hcPort = env
-			break
-		}
-	}
-	require.NotNil(t, hcPort, "HEALTHCHECK_PORT env var must be set")
-	// Probe scripts always target the admin port — it is plain-text even when TLS
-	// is enabled on the main client port (--no_tls_on_admin_port is always set).
-	assert.Equal(t, fmt.Sprintf("%d", DragonflyAdminPort), hcPort.Value)
-}
-
-func TestHealthcheckPortEnvVar_UnaffectedByCustomClientPort(t *testing.T) {
-	// Custom --port= changes the client-facing port but probes must still use the
-	// admin port regardless, because the admin port is always plain-text.
-	df := newTestDragonfly(1)
-	df.Spec.Args = []string{"--port=6380"}
-	objs, err := GenerateDragonflyResources(df, "")
-	require.NoError(t, err)
-
-	sts := findStatefulSet(objs)
-	require.NotNil(t, sts)
-
-	var hcPort *corev1.EnvVar
-	for i := range sts.Spec.Template.Spec.Containers[0].Env {
-		env := &sts.Spec.Template.Spec.Containers[0].Env[i]
-		if env.Name == "HEALTHCHECK_PORT" {
-			hcPort = env
-			break
-		}
-	}
-	require.NotNil(t, hcPort)
-	assert.Equal(t, fmt.Sprintf("%d", DragonflyAdminPort), hcPort.Value)
-}
 
 func TestProbeVolumesAndMounts_Default(t *testing.T) {
 	df := newTestDragonfly(1)
