@@ -91,6 +91,38 @@ kubectl patch dragonfly dragonfly-sample --type merge -p '{"spec":{"resources":{
 
 To add authentication to the dragonfly pods, you either set the `DFLY_requirepass` environment variable, or add the `--requirepass` argument.
 
+### Customising health-check probe scripts
+
+You could replace default `liveness`, `readiness` and `startup` probes with your own scripts using the `custom*ProbeConfigMap` fields:
+
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dragonfly-sample-probes
+  namespace: default
+data:
+  liveness-check.sh: |
+    #!/bin/sh
+    timeout 4 redis-cli -h localhost -p ${HEALTHCHECK_PORT:-9999} \
+      PING 2>/dev/null | grep -q "PONG"
+---
+apiVersion: dragonflydb.io/v1alpha1
+kind: Dragonfly
+metadata:
+  name: dragonfly-sample
+spec:
+  replicas: 1
+  customLivenessProbeConfigMap:
+    name: dragonfly-sample-probes
+```
+
+**Override precedence:**
+
+Probe scripts are mounted as volumes named `liveness-probe`, `readiness-probe`, `startup-probe`
+under the hood. I.e. having such volumes added to `spec.additionalVolumes`, takes precedence over `custom*ProbeConfigMap`. Do not use both mechanisms for the same probe.
+
 ### Deleting a Dragonfly instance
 
 To delete a Dragonfly instance, you can run

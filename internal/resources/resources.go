@@ -18,8 +18,6 @@ package resources
 
 import (
 	"fmt"
-	"strconv"
-	"strings"
 
 	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -34,18 +32,6 @@ import (
 var (
 	dflyUserGroup int64 = 999
 )
-
-// resolveRedisPort returns the Redis port from spec.args --port=XXXX, defaulting to DragonflyPort.
-func resolveRedisPort(args []string) int32 {
-	for _, arg := range args {
-		if strings.HasPrefix(arg, "--port=") {
-			if p, err := strconv.Atoi(strings.TrimPrefix(arg, "--port=")); err == nil && p > 0 && p <= 65535 {
-				return int32(p)
-			}
-		}
-	}
-	return DragonflyPort
-}
 
 func generateProbeConfigMap(df *resourcesv1.Dragonfly, suffix, key, script string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
@@ -139,8 +125,10 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 							},
 							Args: DefaultDragonflyArgs,
 							Env: append(df.Spec.Env, corev1.EnvVar{
+								// Use the admin port for health checks — it never requires TLS,
+								// making probes work correctly on TLS-enabled clusters.
 								Name:  "HEALTHCHECK_PORT",
-								Value: fmt.Sprintf("%d", resolveRedisPort(df.Spec.Args)),
+								Value: fmt.Sprintf("%d", DragonflyAdminPort),
 							}),
 							ReadinessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
@@ -504,20 +492,29 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 		statefulset.Spec.Template.Spec.Containers, df.Spec.AdditionalContainers,
 		func(c corev1.Container) string { return c.Name })
 
-	// Note: AdditionalVolumes takes precedence — a volume named "liveness-probe",
-	// "readiness-probe", or "startup-probe" in spec.additionalVolumes will override
-	// the operator-generated probe volume for that slot.
+	// There are two ways to override probe scripts:
+	//   1. spec.customLivenessProbeConfigMap / customReadinessProbeConfigMap / customStartupProbeConfigMap
+	//      — replaces the generated default ConfigMap for a specific probe.
+	//   2. spec.additionalVolumes with a matching volume name ("liveness-probe", "readiness-probe",
+	//      "startup-probe") — wins over both the default and custom ConfigMap volumes because
+	//      mergeNamedSlices appends additionalVolumes last, and Kubernetes uses the last definition.
+	// Do not use both mechanisms for the same probe simultaneously.
 	statefulset.Spec.Template.Spec.Volumes = mergeNamedSlices(
 		statefulset.Spec.Template.Spec.Volumes, df.Spec.AdditionalVolumes,
 		func(v corev1.Volume) string { return v.Name })
 
 	// ConfigMaps are appended before the StatefulSet so they exist when pods start
 	// and can mount the probe script volumes without getting stuck in Pending.
-	resources = append(resources,
-		generateProbeConfigMap(df, LivenessProbeConfigMapSuffix, LivenessScriptKey, defaultLivenessScript),
-		generateProbeConfigMap(df, ReadinessProbeConfigMapSuffix, ReadinessScriptKey, defaultReadinessScript),
-		generateProbeConfigMap(df, StartupProbeConfigMapSuffix, StartupScriptKey, defaultStartupScript),
-	)
+	// Skip generating a default when the user has pointed to their own ConfigMap.
+	if df.Spec.CustomLivenessProbeConfigMap == nil || df.Spec.CustomLivenessProbeConfigMap.Name == "" {
+		resources = append(resources, generateProbeConfigMap(df, LivenessProbeConfigMapSuffix, LivenessScriptKey, defaultLivenessScript))
+	}
+	if df.Spec.CustomReadinessProbeConfigMap == nil || df.Spec.CustomReadinessProbeConfigMap.Name == "" {
+		resources = append(resources, generateProbeConfigMap(df, ReadinessProbeConfigMapSuffix, ReadinessScriptKey, defaultReadinessScript))
+	}
+	if df.Spec.CustomStartupProbeConfigMap == nil || df.Spec.CustomStartupProbeConfigMap.Name == "" {
+		resources = append(resources, generateProbeConfigMap(df, StartupProbeConfigMapSuffix, StartupScriptKey, defaultStartupScript))
+	}
 
 	resources = append(resources, &statefulset)
 
