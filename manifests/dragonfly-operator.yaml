@@ -7508,7 +7508,7 @@ spec:
         - --leader-elect
         command:
         - /manager
-        image: ghcr.io/mvasilenko/dragonfly-operator:v1.5.2
+        image: ghcr.io/mvasilenko/dragonfly-operator:v1.5.3
         livenessProbe:
           httpGet:
             path: /healthz
