@@ -6919,6 +6919,15 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+              port:
+                description: |-
+                  (Optional) Client port Dragonfly listens on. Defaults to 6379.
+                  Used when you want to align the port with an external convention
+                  (e.g. 6380 for TLS).
+                format: int32
+                maximum: 65535
+                minimum: 1
+                type: integer
               tolerations:
                 description: (Optional) Dragonfly pod tolerations
                 items:

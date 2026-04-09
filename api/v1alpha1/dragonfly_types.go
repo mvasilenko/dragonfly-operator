@@ -146,6 +146,15 @@ type DragonflySpec struct {
 	// +kubebuilder:validation:Optional
 	TLSSecretRef *corev1.SecretReference `json:"tlsSecretRef,omitempty"`
 
+	// (Optional) Client port Dragonfly listens on. Defaults to 6379.
+	// Used when you want to align the port with an external convention
+	// (e.g. 6380 for TLS).
+	// +optional
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	Port *int32 `json:"port,omitempty"`
+
 	// (Optional) Dragonfly SSD Tiering configuration
 	// +optional
 	// +kubebuilder:validation:Optional
