@@ -33,6 +33,16 @@ var (
 	dflyUserGroup int64 = 999
 )
 
+// effectiveClientPort returns the client port Dragonfly should listen on for
+// a given Dragonfly CR. It honors spec.Port when set, otherwise falls back
+// to the default constant DragonflyPort (6379).
+func effectiveClientPort(df *resourcesv1.Dragonfly) int32 {
+	if df.Spec.Port != nil {
+		return *df.Spec.Port
+	}
+	return int32(DragonflyPort)
+}
+
 func generateProbeConfigMap(df *resourcesv1.Dragonfly, suffix, key, script string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -68,6 +78,8 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 			image = fmt.Sprintf("%s:%s", DragonflyImage, Version)
 		}
 	}
+
+	clientPort := effectiveClientPort(df)
 
 	// Create a StatefulSet, Headless Service
 	statefulset := appsv1.StatefulSet{
@@ -116,7 +128,7 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 							Ports: []corev1.ContainerPort{
 								{
 									Name:          DragonflyPortName,
-									ContainerPort: DragonflyPort,
+									ContainerPort: clientPort,
 								},
 								{
 									Name:          DragonflyAdminPortName,
@@ -209,6 +221,12 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 
 	if df.Spec.Args != nil {
 		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, df.Spec.Args...)
+	}
+	if df.Spec.Port != nil {
+		statefulset.Spec.Template.Spec.Containers[0].Args = append(
+			statefulset.Spec.Template.Spec.Containers[0].Args,
+			fmt.Sprintf("--port=%d", clientPort),
+		)
 	}
 	if df.Spec.MemcachedPort != 0 {
 		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("%s=%d", MemcachedPortArg, df.Spec.MemcachedPort))
@@ -547,8 +565,9 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 			},
 			Ports: []corev1.ServicePort{
 				{
-					Name: DragonflyPortName,
-					Port: DragonflyPort,
+					Name:       DragonflyPortName,
+					Port:       effectiveClientPort(df),
+					TargetPort: intstr.FromInt32(effectiveClientPort(df)),
 				},
 			},
 		},
@@ -626,6 +645,7 @@ func isNetworkPolicyEnabled(df *resourcesv1.Dragonfly) bool {
 
 func generateNetworkPolicy(df *resourcesv1.Dragonfly) networkingv1.NetworkPolicy {
 	protocolTCP := corev1.ProtocolTCP
+	clientPort := effectiveClientPort(df)
 
 	instanceSelector := map[string]string{
 		DragonflyNameLabelKey:     df.Name,
@@ -637,7 +657,7 @@ func generateNetworkPolicy(df *resourcesv1.Dragonfly) networkingv1.NetworkPolicy
 		Ports: []networkingv1.NetworkPolicyPort{
 			{
 				Protocol: &protocolTCP,
-				Port:     &intstr.IntOrString{Type: intstr.Int, IntVal: DragonflyPort},
+				Port:     &intstr.IntOrString{Type: intstr.Int, IntVal: clientPort},
 			},
 		},
 	}
