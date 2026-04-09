@@ -214,6 +214,11 @@ func (in *DragonflySpec) DeepCopyInto(out *DragonflySpec) {
 		*out = new(v1.SecretReference)
 		**out = **in
 	}
+	if in.Port != nil {
+		in, out := &in.Port, &out.Port
+		*out = new(int32)
+		**out = **in
+	}
 	if in.Tiering != nil {
 		in, out := &in.Tiering, &out.Tiering
 		*out = new(Tiering)
