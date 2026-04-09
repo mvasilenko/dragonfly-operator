@@ -421,6 +421,71 @@ func TestProbeVolumes_CustomLivenessConfigMapOverride(t *testing.T) {
 	t.Fatal("liveness-probe volume not found")
 }
 
+// TestPort_NilSpecPort_UpgradeSafe locks in the backwards-compatibility guarantee:
+// when spec.Port is nil (existing users who never set a custom port), the
+// generated StatefulSet and Service must stay byte-identical to what earlier
+// operator versions produced. A drift here would cause the operator to patch
+// existing resources on upgrade, rolling out StatefulSets unnecessarily.
+func TestPort_NilSpecPort_UpgradeSafe(t *testing.T) {
+	df := newTestDragonfly(2)
+	require.Nil(t, df.Spec.Port, "precondition: test uses default CR with no Port override")
+
+	objs, err := GenerateDragonflyResources(df, "")
+	require.NoError(t, err)
+
+	// --- StatefulSet invariants (anything here can trigger a pod rollout) ---
+	sts := findStatefulSet(objs)
+	require.NotNil(t, sts)
+
+	container := sts.Spec.Template.Spec.Containers[0]
+
+	// ContainerPort must be the default 6379, same as pre-change code.
+	var clientContainerPort *corev1.ContainerPort
+	for i, p := range container.Ports {
+		if p.Name == DragonflyPortName {
+			clientContainerPort = &container.Ports[i]
+			break
+		}
+	}
+	require.NotNil(t, clientContainerPort, "client-port ContainerPort must exist")
+	assert.Equal(t, int32(DragonflyPort), clientContainerPort.ContainerPort,
+		"default ContainerPort must stay 6379 — any drift rolls out existing StatefulSets")
+
+	// Args must NOT contain a --port=... flag. The old operator never emitted
+	// one; emitting it now would change the pod template hash and rollout.
+	for _, arg := range container.Args {
+		assert.False(t, len(arg) >= 7 && arg[:7] == "--port=",
+			"args must not contain --port=... when spec.Port is nil, got %q", arg)
+	}
+
+	// --- Service invariants ---
+	var svc *corev1.Service
+	for _, obj := range objs {
+		if s, ok := obj.(*corev1.Service); ok && s.Name == df.Name {
+			svc = s
+			break
+		}
+	}
+	require.NotNil(t, svc, "headless Service must be generated")
+
+	var clientSvcPort *corev1.ServicePort
+	for i, p := range svc.Spec.Ports {
+		if p.Name == DragonflyPortName {
+			clientSvcPort = &svc.Spec.Ports[i]
+			break
+		}
+	}
+	require.NotNil(t, clientSvcPort)
+	assert.Equal(t, int32(DragonflyPort), clientSvcPort.Port,
+		"default Service port must stay 6379")
+	// Earlier operator versions never set TargetPort on this ServicePort.
+	// Setting it now (even to the same numeric value) creates a diff against
+	// the stored Service and causes noisy no-op reconciles on upgrade.
+	assert.Equal(t, intstr.IntOrString{}, clientSvcPort.TargetPort,
+		"TargetPort must stay zero-value when spec.Port is nil — "+
+			"setting it causes Service churn on upgrade")
+}
+
 func TestProbeVolumes_CustomStartupConfigMapOverride(t *testing.T) {
 	df := newTestDragonfly(1)
 	df.Spec.CustomStartupProbeConfigMap = &corev1.LocalObjectReference{Name: "my-startup-check"}
