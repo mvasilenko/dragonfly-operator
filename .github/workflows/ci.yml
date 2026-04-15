@@ -91,7 +91,7 @@ jobs:
           echo "${{ secrets.DOCKERHUB_TOKEN }}" | \
           helm registry login -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin docker.io
 
-          helm push dragonfly-operator-${{ env.VERSION }}.tgz oci://docker.io/mvasilenko/dragonfly-operator/helm
+          helm push dragonfly-operator-${{ env.VERSION }}.tgz oci://docker.io/mvasilenko
 
       - name: Login to Docker Hub
         uses: docker/login-action@v4
@@ -128,5 +128,5 @@ jobs:
             Docker image (GHCR): ghcr.io/mvasilenko/dragonfly-operator:${{ github.ref_name }}
             Docker image (Docker Hub): docker.io/mvasilenko/dragonfly-operator:${{ github.ref_name }}
             Helm chart (GHCR): oci://ghcr.io/mvasilenko/dragonfly-operator/helm
-            Helm chart (Docker Hub): oci://docker.io/mvasilenko/dragonfly-operator/helm
+            Helm chart (Docker Hub): oci://docker.io/mvasilenko/dragonfly-operator
           draft: true
