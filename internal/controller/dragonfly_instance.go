@@ -1167,3 +1167,138 @@ func (dfi *DragonflyInstance) getMasterCandidate(ctx context.Context, pod *corev
 	}
 	return c
 }
+
+// customProbeConfigMapNames returns the names of user-provided custom probe
+// ConfigMaps referenced by this Dragonfly CR. Auto-generated names are excluded.
+func (dfi *DragonflyInstance) customProbeConfigMapNames() []string {
+	var names []string
+	for _, ref := range []*corev1.LocalObjectReference{
+		dfi.df.Spec.CustomLivenessProbeConfigMap,
+		dfi.df.Spec.CustomReadinessProbeConfigMap,
+		dfi.df.Spec.CustomStartupProbeConfigMap,
+	} {
+		if ref != nil && ref.Name != "" {
+			names = append(names, ref.Name)
+		}
+	}
+	return names
+}
+
+// ensureFinalizerOnConfigMap adds the probe protection finalizer to a ConfigMap
+// if it does not already have it.
+func (dfi *DragonflyInstance) ensureFinalizerOnConfigMap(ctx context.Context, name string) error {
+	var cm corev1.ConfigMap
+	if err := dfi.client.Get(ctx, client.ObjectKey{Namespace: dfi.df.Namespace, Name: name}, &cm); err != nil {
+		if apierrors.IsNotFound(err) {
+			dfi.log.Info("custom probe ConfigMap not found, skipping finalizer", "configmap", name)
+			return nil
+		}
+		return fmt.Errorf("failed to get ConfigMap %s: %w", name, err)
+	}
+	if controllerutil.AddFinalizer(&cm, resources.ProbeConfigMapFinalizer) {
+		if err := dfi.client.Update(ctx, &cm); err != nil {
+			return fmt.Errorf("failed to add finalizer to ConfigMap %s: %w", name, err)
+		}
+		dfi.log.Info("added finalizer to custom probe ConfigMap", "configmap", name)
+	}
+	return nil
+}
+
+// removeFinalizerFromConfigMap removes the probe protection finalizer from a
+// ConfigMap, but only if no other Dragonfly CR in the namespace references it.
+func (dfi *DragonflyInstance) removeFinalizerFromConfigMap(ctx context.Context, name string) error {
+	referenced, err := dfi.isConfigMapReferencedByAnyDragonfly(ctx, name)
+	if err != nil {
+		return err
+	}
+	if referenced {
+		return nil
+	}
+
+	var cm corev1.ConfigMap
+	if err := dfi.client.Get(ctx, client.ObjectKey{Namespace: dfi.df.Namespace, Name: name}, &cm); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to get ConfigMap %s: %w", name, err)
+	}
+	if controllerutil.RemoveFinalizer(&cm, resources.ProbeConfigMapFinalizer) {
+		if err := dfi.client.Update(ctx, &cm); err != nil {
+			return fmt.Errorf("failed to remove finalizer from ConfigMap %s: %w", name, err)
+		}
+		dfi.log.Info("removed finalizer from ConfigMap", "configmap", name)
+	}
+	return nil
+}
+
+// isConfigMapReferencedByAnyDragonfly checks if any Dragonfly CR in the
+// namespace (other than the current one) references the given ConfigMap name.
+func (dfi *DragonflyInstance) isConfigMapReferencedByAnyDragonfly(ctx context.Context, cmName string) (bool, error) {
+	var dfList dfv1alpha1.DragonflyList
+	if err := dfi.client.List(ctx, &dfList, client.InNamespace(dfi.df.Namespace)); err != nil {
+		return false, fmt.Errorf("failed to list Dragonfly CRs: %w", err)
+	}
+	for i := range dfList.Items {
+		df := &dfList.Items[i]
+		if df.Name == dfi.df.Name {
+			continue
+		}
+		for _, ref := range []*corev1.LocalObjectReference{
+			df.Spec.CustomLivenessProbeConfigMap,
+			df.Spec.CustomReadinessProbeConfigMap,
+			df.Spec.CustomStartupProbeConfigMap,
+		} {
+			if ref != nil && ref.Name == cmName {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+// reconcileProbeConfigMapFinalizers ensures finalizers are present on referenced
+// custom probe ConfigMaps and removed from ones that are no longer referenced.
+func (dfi *DragonflyInstance) reconcileProbeConfigMapFinalizers(ctx context.Context) error {
+	referencedNames := dfi.customProbeConfigMapNames()
+
+	// Add finalizer to currently referenced ConfigMaps
+	for _, name := range referencedNames {
+		if err := dfi.ensureFinalizerOnConfigMap(ctx, name); err != nil {
+			return err
+		}
+	}
+
+	// Remove finalizer from ConfigMaps that are no longer referenced by any CR
+	var cmList corev1.ConfigMapList
+	if err := dfi.client.List(ctx, &cmList, client.InNamespace(dfi.df.Namespace)); err != nil {
+		return fmt.Errorf("failed to list ConfigMaps: %w", err)
+	}
+	referencedSet := make(map[string]bool, len(referencedNames))
+	for _, name := range referencedNames {
+		referencedSet[name] = true
+	}
+	for i := range cmList.Items {
+		cm := &cmList.Items[i]
+		if !controllerutil.ContainsFinalizer(cm, resources.ProbeConfigMapFinalizer) {
+			continue
+		}
+		if referencedSet[cm.Name] {
+			continue
+		}
+		if err := dfi.removeFinalizerFromConfigMap(ctx, cm.Name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// cleanupProbeConfigMapFinalizers removes finalizers from all ConfigMaps
+// referenced by this CR (used during CR deletion).
+func (dfi *DragonflyInstance) cleanupProbeConfigMapFinalizers(ctx context.Context) error {
+	for _, name := range dfi.customProbeConfigMapNames() {
+		if err := dfi.removeFinalizerFromConfigMap(ctx, name); err != nil {
+			return err
+		}
+	}
+	return nil
+}

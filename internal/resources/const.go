@@ -117,6 +117,10 @@ const (
 	LivenessProbeVolumeName  = "liveness-probe"
 	ReadinessProbeVolumeName = "readiness-probe"
 	StartupProbeVolumeName   = "startup-probe"
+
+	// ProbeConfigMapFinalizer prevents accidental deletion of user-provided
+	// custom probe ConfigMaps while they are referenced by a Dragonfly CR.
+	ProbeConfigMapFinalizer = "dragonflydb.io/probe-configmap-protection"
 )
 
 var DefaultDragonflyArgs = []string{

@@ -1472,3 +1472,90 @@ func isDragonflyInphase(ctx context.Context, c client.Client, name, namespace, p
 
 	return false, nil
 }
+
+var _ = Describe("Dragonfly ConfigMap finalizer protection", Ordered, FlakeAttempts(3), func() {
+	ctx := context.Background()
+	name := "df-finalizer-test"
+	namespace := "default"
+	cmName := "df-custom-liveness-probe"
+
+	Context("Finalizer lifecycle", func() {
+		It("Should create ConfigMap and Dragonfly CR", func() {
+			err := k8sClient.Create(ctx, &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      cmName,
+					Namespace: namespace,
+				},
+				Data: map[string]string{
+					"liveness-check.sh": "#!/bin/sh\nexit 0\n",
+				},
+			})
+			Expect(err).To(BeNil())
+
+			disabled := false
+			err = k8sClient.Create(ctx, &resourcesv1.Dragonfly{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      name,
+					Namespace: namespace,
+				},
+				Spec: resourcesv1.DragonflySpec{
+					Replicas:             1,
+					NetworkPolicyEnabled: &disabled,
+					CustomLivenessProbeConfigMap: &corev1.LocalObjectReference{
+						Name: cmName,
+					},
+				},
+			})
+			Expect(err).To(BeNil())
+
+			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 3*time.Minute)
+			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 3*time.Minute)
+		})
+
+		It("Should add finalizer to the custom probe ConfigMap", func() {
+			var cm corev1.ConfigMap
+			Eventually(func() bool {
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: cmName, Namespace: namespace}, &cm); err != nil {
+					return false
+				}
+				for _, f := range cm.Finalizers {
+					if f == resources.ProbeConfigMapFinalizer {
+						return true
+					}
+				}
+				return false
+			}, 1*time.Minute, 2*time.Second).Should(BeTrue(), "ConfigMap should have the probe protection finalizer")
+		})
+
+		It("Should block ConfigMap deletion while referenced", func() {
+			var cm corev1.ConfigMap
+			err := k8sClient.Get(ctx, types.NamespacedName{Name: cmName, Namespace: namespace}, &cm)
+			Expect(err).To(BeNil())
+
+			err = k8sClient.Delete(ctx, &cm)
+			Expect(err).To(BeNil()) // Delete accepted but blocked by finalizer
+
+			// ConfigMap should still exist (in Terminating state)
+			Consistently(func() bool {
+				var check corev1.ConfigMap
+				err := k8sClient.Get(ctx, types.NamespacedName{Name: cmName, Namespace: namespace}, &check)
+				return err == nil && check.DeletionTimestamp != nil
+			}, 10*time.Second, 2*time.Second).Should(BeTrue(), "ConfigMap should remain in Terminating state")
+		})
+
+		It("Should remove finalizer when CR is deleted", func() {
+			var df resourcesv1.Dragonfly
+			err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, &df)
+			Expect(err).To(BeNil())
+			err = k8sClient.Delete(ctx, &df)
+			Expect(err).To(BeNil())
+
+			// ConfigMap should be fully deleted once finalizer is removed
+			Eventually(func() bool {
+				var cm corev1.ConfigMap
+				err := k8sClient.Get(ctx, types.NamespacedName{Name: cmName, Namespace: namespace}, &cm)
+				return apierrors.IsNotFound(err)
+			}, 1*time.Minute, 2*time.Second).Should(BeTrue(), "ConfigMap should be deleted after CR removal")
+		})
+	})
+})

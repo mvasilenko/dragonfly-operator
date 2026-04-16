@@ -65,12 +65,19 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	defer dfi.Close()
 
 	if dfi.isTerminating() {
-		// Ignore dragonfly instance that is being foreground deleted
+		// Clean up finalizers on custom probe ConfigMaps before the CR is deleted
+		if err = dfi.cleanupProbeConfigMapFinalizers(ctx); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to cleanup probe ConfigMap finalizers: %w", err)
+		}
 		return ctrl.Result{}, nil
 	}
 
 	if err = dfi.reconcileResources(ctx); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile dragonfly resources: %w", err)
+	}
+
+	if err = dfi.reconcileProbeConfigMapFinalizers(ctx); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile probe ConfigMap finalizers: %w", err)
 	}
 
 	dfiStatus := dfi.getStatus()
