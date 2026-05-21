@@ -35,6 +35,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -734,47 +735,50 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 }
 
 // copyDesiredPayload copies the type-specific payload from desired into existing
-// so that client.Patch sends the intended change. ConfigMap has no .Spec — its
-// payload lives in .Data/.BinaryData — so the generic reflection path silently
-// no-ops on it; handle that case explicitly.
+// so that the deferred client.Patch sends the intended change. ConfigMap carries
+// its payload in .Data, the rest in .Spec.
 func copyDesiredPayload(desired, existing client.Object) {
-	if cmDesired, ok := desired.(*corev1.ConfigMap); ok {
-		if cmExisting, ok := existing.(*corev1.ConfigMap); ok {
-			cmExisting.Data = cmDesired.Data
-			cmExisting.BinaryData = cmDesired.BinaryData
-			return
-		}
-	}
-	desiredV := reflect.ValueOf(desired).Elem()
-	existingV := reflect.ValueOf(existing).Elem()
-	desiredSpec := desiredV.FieldByName("Spec")
-	existingSpec := existingV.FieldByName("Spec")
-	if desiredSpec.IsValid() && existingSpec.IsValid() {
-		existingSpec.Set(desiredSpec)
+	switch d := desired.(type) {
+	case *corev1.ConfigMap:
+		e := existing.(*corev1.ConfigMap)
+		e.Data = d.Data
+		e.BinaryData = d.BinaryData
+		e.Immutable = d.Immutable
+	case *appsv1.StatefulSet:
+		existing.(*appsv1.StatefulSet).Spec = d.Spec
+	case *corev1.Service:
+		existing.(*corev1.Service).Spec = d.Spec
+	case *policyv1.PodDisruptionBudget:
+		existing.(*policyv1.PodDisruptionBudget).Spec = d.Spec
+	case *networkingv1.NetworkPolicy:
+		existing.(*networkingv1.NetworkPolicy).Spec = d.Spec
 	}
 }
 
-// Helper function to compare resource specs (add to the file)
+// resourceSpecsEqual reports whether the desired and existing objects carry the
+// same metadata and type-specific payload. When true the reconcile loop skips
+// the patch and avoids needless API calls.
 func resourceSpecsEqual(desired, existing client.Object) bool {
-	// Compare metadata labels and annotations
-	if !reflect.DeepEqual(desired.GetLabels(), existing.GetLabels()) || !reflect.DeepEqual(desired.GetAnnotations(), existing.GetAnnotations()) {
+	if !reflect.DeepEqual(desired.GetLabels(), existing.GetLabels()) ||
+		!reflect.DeepEqual(desired.GetAnnotations(), existing.GetAnnotations()) {
 		return false
 	}
-	// ConfigMaps store content in .Data, not .Spec — compare Data directly.
-	if cmDesired, ok := desired.(*corev1.ConfigMap); ok {
-		if cmExisting, ok := existing.(*corev1.ConfigMap); ok {
-			return reflect.DeepEqual(cmDesired.Data, cmExisting.Data)
-		}
+	switch d := desired.(type) {
+	case *corev1.ConfigMap:
+		e := existing.(*corev1.ConfigMap)
+		return reflect.DeepEqual(d.Data, e.Data) &&
+			reflect.DeepEqual(d.BinaryData, e.BinaryData) &&
+			reflect.DeepEqual(d.Immutable, e.Immutable)
+	case *appsv1.StatefulSet:
+		return apiequality.Semantic.DeepEqual(d.Spec, existing.(*appsv1.StatefulSet).Spec)
+	case *corev1.Service:
+		return apiequality.Semantic.DeepEqual(d.Spec, existing.(*corev1.Service).Spec)
+	case *policyv1.PodDisruptionBudget:
+		return apiequality.Semantic.DeepEqual(d.Spec, existing.(*policyv1.PodDisruptionBudget).Spec)
+	case *networkingv1.NetworkPolicy:
+		return apiequality.Semantic.DeepEqual(d.Spec, existing.(*networkingv1.NetworkPolicy).Spec)
 	}
-	// Compare only the .Spec field using reflection
-	desiredV := reflect.ValueOf(desired).Elem()
-	existingV := reflect.ValueOf(existing).Elem()
-	desiredSpec := desiredV.FieldByName("Spec")
-	existingSpec := existingV.FieldByName("Spec")
-	if !desiredSpec.IsValid() || !existingSpec.IsValid() {
-		return true // No spec field, consider equal
-	}
-	return reflect.DeepEqual(desiredSpec.Interface(), existingSpec.Interface())
+	return true
 }
 
 func parseInfoToMap(info string) map[string]string {
